@@ -4,6 +4,7 @@
 
 from odoo_test_helper import FakeModelLoader
 
+from odoo.exceptions import UserError
 from odoo.fields import Command
 from odoo.tests import common
 
@@ -322,3 +323,72 @@ class TestMultiCompanyAbstract(common.TransactionCase):
             self.record_1.with_user(user).read(["name"]),
             [{"id": self.record_1.id, "name": "test"}],
         )
+
+    def test_company_id_create_with_tuple(self):
+        """
+        Test safety check in _multicompany_patch_vals.
+        """
+        tester = self.test_model.create(
+            {
+                "name": "Tuple Tester",
+                "company_id": self.company_1.id,
+                "company_ids": (6, 0, self.company_2.ids),
+            }
+        )
+        self.assertIn(self.company_1, tester.company_ids)
+        self.assertIn(self.company_2, tester.company_ids)
+
+    def test_company_id_write_with_company_ids(self):
+        """
+        Test _multicompany_patch_vals on write() when both company_ids and company_id
+        are provided in the vals dict.
+        """
+        tester = self.test_model.create(
+            {
+                "name": "Write Tester",
+                "company_ids": [(6, 0, self.company_1.ids)],
+            }
+        )
+        tester.write(
+            {
+                "company_id": self.company_2.id,
+                "company_ids": (6, 0, self.company_1.ids),
+            }
+        )
+        self.assertIn(self.company_2, tester.sudo().company_ids)
+        self.assertIn(self.company_1, tester.sudo().company_ids)
+
+    def test_search_not_in_false_company(self):
+        """
+        Test the 'not in' operator in _search_company_id when searching for False.
+        """
+        self.add_company(self.company_2)
+        result = self.test_model.search([("company_id", "not in", [False])])
+        self.assertIn(self.record_1, result)
+
+    def test_base_check_company_on_res_company(self):
+        """
+        Test the _check_company when called directly on a res.company record.
+        """
+        self.company_2._check_company()
+
+    def test_company_id_compute_no_newid_leak(self):
+        """
+        The fallback branch of ``_compute_company_id`` must not assign a
+        ``NewId`` to ``company_id`` when ``record.company_ids[:1]`` is a
+        virtual (unsaved) record. Otherwise the leaked ``NewId`` propagates
+        into downstream domains (e.g. ``_compute_same_vat_partner_id``) and
+        triggers ``psycopg2.ProgrammingError: can't adapt type 'NewId'``.
+        """
+        new_record = self.test_model.new(
+            {
+                "name": "NewId Tester",
+                "company_ids": [(6, 0, self.company_2.ids)],
+            }
+        )
+        # Force the compute on the in-memory record
+        new_record.invalidate_recordset(["company_id"])
+        company_id = new_record.company_id
+        # The resulting value must be a real integer or False, never a NewId
+        if company_id:
+            self.assertIsInstance(company_id.id, int)
