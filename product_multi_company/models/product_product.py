@@ -3,7 +3,7 @@
 
 from odoo import api, models
 from odoo.exceptions import UserError
-from odoo.sql_db import SQL
+from odoo.tools import SQL, Query
 
 
 class ProductProduct(models.Model):
@@ -21,7 +21,7 @@ class ProductProduct(models.Model):
             return SQL()
         return super()._order_field_to_sql(alias, field_name, direction, nulls, query)
 
-    def _read_group_groupby(self, alias, groupby_spec, query):
+    def _read_group_groupby(self, groupby_spec: str, query: Query) -> SQL:
         # Group on `company_ids` when asked to group on the non-stored
         # `company_id`, mirroring `multi.company.abstract` (see
         # `_order_field_to_sql` above for why this is duplicated here).
@@ -38,8 +38,8 @@ class ProductProduct(models.Model):
                         model=self._name,
                     )
                 )
-            return super()._read_group_groupby(alias, "company_ids", query)
-        return super()._read_group_groupby(alias, groupby_spec, query)
+            return super()._read_group_groupby("company_ids", query)
+        return super()._read_group_groupby(groupby_spec, query)
 
     @api.model_create_multi
     def create(self, vals_list):
