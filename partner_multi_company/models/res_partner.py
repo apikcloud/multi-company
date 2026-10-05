@@ -23,7 +23,7 @@ class ResPartner(models.Model):
             return SQL()
         return super()._order_field_to_sql(alias, field_name, direction, nulls, query)
 
-    def _read_group_groupby(self, groupby_spec: str, query: Query) -> SQL:
+    def _read_group_groupby(self, alias: str, groupby_spec: str, query: Query) -> SQL:
         # Group on `company_ids` when asked to group on the non-stored
         # `company_id`, mirroring `multi.company.abstract` (see
         # `_order_field_to_sql` above for why this is duplicated here).
@@ -40,8 +40,21 @@ class ResPartner(models.Model):
                         model=self._name,
                     )
                 )
-            return super()._read_group_groupby("company_ids", query)
-        return super()._read_group_groupby(groupby_spec, query)
+            return super()._read_group_groupby(alias, "company_ids", query)
+        return super()._read_group_groupby(alias, groupby_spec, query)
+
+    def _field_to_sql(self, alias, fname, query=None):
+        field = self._fields.get(fname)
+        if fname == "company_id" and field is not None and not field.store:
+            rel = self._fields["company_ids"]
+            return SQL(
+                "(SELECT array_agg(%(c2)s ORDER BY %(c2)s) FROM %(rel)s WHERE %(c1)s = %(id)s)",
+                c1=SQL.identifier(rel.column1),
+                c2=SQL.identifier(rel.column2),
+                rel=SQL.identifier(rel.relation),
+                id=SQL.identifier(alias, "id"),
+            )
+        return super()._field_to_sql(alias, fname, query)
 
     @api.model_create_multi
     def create(self, vals_list):
